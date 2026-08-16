@@ -45,6 +45,17 @@ export function openArgv(platform: NodeJS.Platform, abs: string): string[] {
 }
 
 /**
+ * Platform argv for the system "Open With" chooser. On Windows this shows
+ * SHELL32's OpenAs_RunDLL dialog (Office/WPS and every registered handler);
+ * macOS and Linux have no equivalent dialog, so they fall back to the
+ * default-app opener instead of doing nothing.
+ */
+export function openWithArgv(platform: NodeJS.Platform, abs: string): string[] {
+  if (platform === 'win32') return ['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', abs]
+  return openArgv(platform, abs)
+}
+
+/**
  * Spawn one OS GUI command fire-and-forget: Explorer / Finder / xdg-open
  * detach immediately and their exit codes are not meaningful, so nothing is
  * awaited beyond the spawn itself (failures still surface as an error).
@@ -67,6 +78,43 @@ function spawnOsCommand(ctx: Context, argv: string[]): PanelError | null {
   } catch (error) {
     ctx.logger.warn(`dsh-aionui-panel: OS command failed ([${argv.join(', ')}]): ${String(error)}`)
     return { code: 'internal', message: 'cannot run OS command' }
+  }
+}
+
+/**
+ * Translate a host path into the Windows form Windows GUI programs need
+ * when the harness runs under WSL (interop). `wslpath -w` yields either a
+ * UNC path (`\\wsl.localhost\...`) or a drive path (`C:\...`); the raw
+ * Linux path is meaningless to Explorer/rundll32. Returns null when the
+ * host is not WSL or the translation fails.
+ */
+async function wslWindowsPath(ctx: Context, abs: string): Promise<string | null> {
+  if (process.platform === 'win32') return abs
+  if (process.platform !== 'linux') return null
+  try {
+    const { readFile } = await import('node:fs/promises')
+    const probe = await readFile('/proc/sys/fs/binfmt_misc/WSLInterop', 'utf8')
+    if (!probe.includes('enabled')) return null
+  } catch {
+    return null
+  }
+  const spec: SubprocessSpawnSpec = {
+    argv: ['wslpath', '-w', abs],
+    stdio: {
+      stdin: 'ignore',
+      stdout: { maxBytes: 1 << 16 },
+      stderr: { maxBytes: 1 << 16 },
+    },
+    graceMs: 5_000,
+  }
+  try {
+    const handle = ctx.subprocess.spawn(spec)
+    const outcome = await handle.done
+    if (outcome.exitCode !== 0) return null
+    const out = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
+    return out === '' ? null : out
+  } catch {
+    return null
   }
 }
 
@@ -563,6 +611,24 @@ export function registerPanelRoutes(ctx: Context, fs: FsService, git: GitService
           return
         }
         const error = spawnOsCommand(ctx, openArgv(process.platform, resolved.abs))
+        json(res, error === null ? OK({ ok: true as const }) : FAIL(error))
+        return
+      }
+      case '/aionui-panel/open-with': {
+        const path = strField(payload, 'path')
+        if (path === null) {
+          json(res, FAIL(BAD_REQUEST))
+          return
+        }
+        const resolved = await fs.resolveAbsolute(root, path)
+        if (!('ok' in resolved)) {
+          json(res, FAIL(resolved))
+          return
+        }
+        // Under WSL the Windows GUI launcher must receive the UNC/drive form;
+        // anywhere else the plain host path is already what the OS expects.
+        const target = (await wslWindowsPath(ctx, resolved.abs)) ?? resolved.abs
+        const error = spawnOsCommand(ctx, openWithArgv(process.platform, target))
         json(res, error === null ? OK({ ok: true as const }) : FAIL(error))
         return
       }

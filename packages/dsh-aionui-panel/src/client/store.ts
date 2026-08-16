@@ -221,6 +221,8 @@ export interface ExplorerStore extends StateHandle<ExplorerState> {
   revealInFileManager: (rel: string) => Promise<boolean>
   /** Open a path with the OS default app (files only, right-click menu). */
   openWithDefaultApp: (rel: string) => Promise<boolean>
+  /** Open a path via the system "Open With" chooser (files only). */
+  openWithDialog: (rel: string) => Promise<boolean>
   /** Rename a path (newName is a bare name). */
   renameEntry: (rel: string, newName: string) => Promise<boolean>
   /** Create a directory at rel (parent dirs untouched). */
@@ -414,6 +416,12 @@ export function createExplorerStore(api: PanelApi): ExplorerStore {
       const root = handle.getSnapshot().root
       if (root === '') return false
       const result = await api.openWithDefault(root, rel)
+      return result.ok
+    },
+    async openWithDialog(rel: string) {
+      const root = handle.getSnapshot().root
+      if (root === '') return false
+      const result = await api.openWith(root, rel)
       return result.ok
     },
     async renameEntry(rel: string, newName: string) {

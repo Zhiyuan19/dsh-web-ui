@@ -4,7 +4,7 @@
  * platform-specific argument shapes are locked without spawning processes.
  */
 import { describe, expect, it } from 'vitest'
-import { openArgv, revealArgv } from '../src/host/routes.ts'
+import { openArgv, openWithArgv, revealArgv } from '../src/host/routes.ts'
 
 describe('revealArgv', () => {
   it('selects the entry via Explorer on Windows', () => {
@@ -31,5 +31,17 @@ describe('openArgv', () => {
 
   it('opens the path with xdg-open on Linux', () => {
     expect(openArgv('linux', '/home/x/proj/notes.md')).toEqual(['xdg-open', '/home/x/proj/notes.md'])
+  })
+})
+
+describe('openWithArgv', () => {
+  it('shows the Windows Open With dialog via rundll32', () => {
+    expect(openWithArgv('win32', 'C:\\proj\\notes.xlsx'))
+      .toEqual(['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', 'C:\\proj\\notes.xlsx'])
+  })
+
+  it('falls back to the default opener where no chooser exists', () => {
+    expect(openWithArgv('darwin', '/Users/x/proj/notes.xlsx')).toEqual(openArgv('darwin', '/Users/x/proj/notes.xlsx'))
+    expect(openWithArgv('linux', '/home/x/proj/notes.xlsx')).toEqual(openArgv('linux', '/home/x/proj/notes.xlsx'))
   })
 })

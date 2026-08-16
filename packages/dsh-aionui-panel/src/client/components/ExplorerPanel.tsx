@@ -14,7 +14,7 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import type { DragEvent, JSX, MouseEvent as ReactMouseEvent } from 'react'
 import type { FsEntry } from '../../core/types.ts'
-import { parentRel } from '../fileType.ts'
+import { detectContentType, isExternalOpenType, parentRel } from '../fileType.ts'
 import { t } from '../locales.ts'
 import { useStore } from '../hooks/useStore.ts'
 import type { PanelStores } from '../store.ts'
@@ -108,6 +108,15 @@ export function ExplorerPanel({
         label: t('explorer.menu.openWithDefault'),
         onSelect: () => {
           void explorerStore.openWithDefaultApp(entry.path).then((ok) => {
+            if (!ok) toast(t('explorer.opFailed'))
+          })
+        },
+      })
+      entries.push({
+        key: 'open-with',
+        label: t('explorer.menu.openWith'),
+        onSelect: () => {
+          void explorerStore.openWithDialog(entry.path).then((ok) => {
             if (!ok) toast(t('explorer.opFailed'))
           })
         },
@@ -414,6 +423,21 @@ function TreeRowBase({
     setDraggingRow(false)
   }
 
+  // Double-click on a shell-openable file (office/pdf/image) hands it to the
+  // OS "Open With" chooser instead of the DSH preview, which cannot render
+  // it; every other file keeps the single-click behavior (open in preview).
+  const openViaSystemChooser = (): void => {
+    if (entry.isDir) return
+    if (!isExternalOpenType(detectContentType(entry.name))) {
+      handleClick()
+      return
+    }
+    explorer.select(entry.path)
+    void explorer.openWithDialog(entry.path).then((ok) => {
+      if (!ok) toast(t('explorer.opFailed'))
+    })
+  }
+
   return (
     <>
       <div
@@ -423,8 +447,10 @@ function TreeRowBase({
         onKeyDown={activateOnKey(handleClick)}
         onContextMenu={(event) => onContextMenu(event, entry)}
         onDoubleClick={(event) => {
-          // Double-click on a file: same as click (open). Folders: keep toggle.
+          // Double-click: office/pdf/image -> OS "Open With" chooser; other
+          // files keep the single-click behavior (open in preview).
           event.stopPropagation()
+          openViaSystemChooser()
         }}
         draggable={!entry.isDir}
         onDragStart={onDragStart}
@@ -432,7 +458,9 @@ function TreeRowBase({
         role="button"
         tabIndex={0}
         aria-expanded={entry.isDir ? isExpanded : undefined}
-        title={entry.path}
+        title={!entry.isDir && isExternalOpenType(detectContentType(entry.name))
+          ? `${entry.path}\n${t('explorer.doubleClickOpenWithHint')}`
+          : entry.path}
       >
         {entry.isDir ? (
           <span className={`${explorerCss.treeArrow}${isExpanded ? ` ${explorerCss.treeArrowOpen}` : ''}`}>

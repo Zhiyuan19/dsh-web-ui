@@ -92,6 +92,15 @@ export function isTextType(type: PreviewContentType): boolean {
     && type !== 'ppt' && type !== 'unsupported' && type !== 'url'
 }
 
+/**
+ * Whether a file deserves the OS "Open With" chooser on double-click:
+ * Word/Excel/PPT have no renderer, PDF renders in a bare iframe, and images
+ * are view-only — all are better served by the desktop Office/WPS/image app.
+ */
+export function isExternalOpenType(type: PreviewContentType): boolean {
+  return type === 'word' || type === 'excel' || type === 'ppt' || type === 'pdf' || type === 'image'
+}
+
 /** A stable tab id from the file identity (root + path + type). */
 export function tabIdOf(root: string, path: string, type: PreviewContentType): string {
   return `${root}\u0000${path}\u0000${type}`

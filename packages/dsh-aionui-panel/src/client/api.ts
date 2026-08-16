@@ -72,6 +72,11 @@ export class PanelApi {
     return post('/aionui-panel/open-with-default', { root, path })
   }
 
+  /** Open a path via the system "Open With" chooser (OpenAs_RunDLL on Windows). */
+  openWith(root: string, path: string): Promise<PanelEnvelope<{ ok: true }>> {
+    return post('/aionui-panel/open-with', { root, path })
+  }
+
   /** Rename a path (newName is a bare name, no separators). */
   rename(root: string, path: string, newName: string): Promise<PanelEnvelope<{ ok: true }>> {
     return post('/aionui-panel/rename', { root, path, newName })
