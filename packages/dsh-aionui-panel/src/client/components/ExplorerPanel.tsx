@@ -405,7 +405,16 @@ function TreeRowBase({
       explorer.toggleDir(entry.path)
       return
     }
-    // A file: select + open in preview (dedup focuses the open tab).
+    // Shell-openable files (office/pdf/image) have no usable in-app preview:
+    // a single click hands them straight to the OS "Open With" chooser.
+    if (isExternalOpenType(detectContentType(entry.name))) {
+      explorer.select(entry.path)
+      void explorer.openWithDialog(entry.path).then((ok) => {
+        if (!ok) toast(t('explorer.opFailed'))
+      })
+      return
+    }
+    // Everything else: select + open in preview (dedup focuses the open tab).
     explorer.select(entry.path)
     preview.openFile(root, entry.path)
   }
@@ -423,21 +432,6 @@ function TreeRowBase({
     setDraggingRow(false)
   }
 
-  // Double-click on a shell-openable file (office/pdf/image) hands it to the
-  // OS "Open With" chooser instead of the DSH preview, which cannot render
-  // it; every other file keeps the single-click behavior (open in preview).
-  const openViaSystemChooser = (): void => {
-    if (entry.isDir) return
-    if (!isExternalOpenType(detectContentType(entry.name))) {
-      handleClick()
-      return
-    }
-    explorer.select(entry.path)
-    void explorer.openWithDialog(entry.path).then((ok) => {
-      if (!ok) toast(t('explorer.opFailed'))
-    })
-  }
-
   return (
     <>
       <div
@@ -447,10 +441,9 @@ function TreeRowBase({
         onKeyDown={activateOnKey(handleClick)}
         onContextMenu={(event) => onContextMenu(event, entry)}
         onDoubleClick={(event) => {
-          // Double-click: office/pdf/image -> OS "Open With" chooser; other
-          // files keep the single-click behavior (open in preview).
+          // The single click already routes to preview / OS chooser; swallow
+          // the double-click so it doesn't fire the dialog twice.
           event.stopPropagation()
-          openViaSystemChooser()
         }}
         draggable={!entry.isDir}
         onDragStart={onDragStart}
