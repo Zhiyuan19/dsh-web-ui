@@ -206,6 +206,8 @@ export interface ExplorerState {
   }
   /** Bumped on every fs change event (drives refetch + re-render). */
   version: number
+  /** Pending copy/cut operation ('' target dir applies to root). */
+  clipboard: { paths: string[]; cut: boolean } | null
 }
 
 /** The explorer store with its async actions. */
@@ -233,6 +235,12 @@ export interface ExplorerStore extends StateHandle<ExplorerState> {
   createFile: (rel: string) => Promise<boolean>
   /** Delete a path (recursive for directories). */
   deleteEntry: (rel: string) => Promise<boolean>
+  /** Copy selected paths into the panel clipboard. */
+  copyPaths: (paths: string[]) => void
+  /** Cut selected paths into the panel clipboard. */
+  cutPaths: (paths: string[]) => void
+  /** Paste the clipboard into a target directory rel ('' = root). */
+  pasteInto: (targetRel: string) => Promise<boolean>
 }
 
 /** Read the persisted explorer UI state for a root (range-guarded). */
@@ -258,6 +266,7 @@ export function createExplorerStore(api: PanelApi): ExplorerStore {
     activeTab: 'files',
     search: { ...EMPTY_SEARCH },
     version: 0,
+    clipboard: null,
   })
 
   const persistDebounced = createDebounced()
@@ -524,10 +533,36 @@ export function createExplorerStore(api: PanelApi): ExplorerStore {
           ...prev,
           selected: prev.selected === rel || prev.selected?.startsWith(rel + '/') ? null : prev.selected,
           dirs: dropSubtree(prev.dirs, rel),
+          clipboard: prev.clipboard?.paths.includes(rel) ? null : prev.clipboard,
         }))
         void this.handleFsChange()
       }
       return result.ok
+    },
+    copyPaths(paths: string[]) {
+      if (paths.length === 0) return
+      handle.update((prev) => ({ ...prev, clipboard: { paths: [...paths], cut: false } }))
+    },
+    cutPaths(paths: string[]) {
+      if (paths.length === 0) return
+      handle.update((prev) => ({ ...prev, clipboard: { paths: [...paths], cut: true } }))
+    },
+    async pasteInto(targetRel: string) {
+      const state = handle.getSnapshot()
+      const root = state.root
+      const clip = state.clipboard
+      if (root === '' || clip === null || clip.paths.length === 0) return false
+      const results = await Promise.all(clip.paths.map((source) => {
+        const base = source.split('/').pop() ?? source
+        const target = targetRel === '' ? base : `${targetRel}/${base}`
+        return clip.cut
+          ? api.move(root, source, target)
+          : api.copy(root, source, target)
+      }))
+      const ok = results.every((result) => result.ok)
+      handle.update((prev) => ({ ...prev, clipboard: null }))
+      await this.handleFsChange()
+      return ok
     },
     async handleFsChange() {
       const root = handle.getSnapshot().root

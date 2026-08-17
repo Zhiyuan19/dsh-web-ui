@@ -696,6 +696,28 @@ export function registerPanelRoutes(ctx: Context, fs: FsService, git: GitService
         json(res, 'ok' in result ? OK(result) : FAIL(result))
         return
       }
+      case '/aionui-panel/copy': {
+        const source = strField(payload, 'source')
+        const target = strField(payload, 'target')
+        if (source === null || target === null) {
+          json(res, FAIL(BAD_REQUEST))
+          return
+        }
+        const result = await fs.copy(root, source, target)
+        json(res, 'ok' in result ? OK(result) : FAIL(result))
+        return
+      }
+      case '/aionui-panel/move': {
+        const source = strField(payload, 'source')
+        const target = strField(payload, 'target')
+        if (source === null || target === null) {
+          json(res, FAIL(BAD_REQUEST))
+          return
+        }
+        const result = await fs.move(root, source, target)
+        json(res, 'ok' in result ? OK(result) : FAIL(result))
+        return
+      }
       case '/aionui-panel/git-status': {
         const result = await git.status(root)
         json(res, result === null ? OK(null) : 'root' in result ? OK(result) : FAIL(result))

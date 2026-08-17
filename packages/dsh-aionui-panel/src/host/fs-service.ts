@@ -9,7 +9,7 @@
  * @module dsh-aionui-panel/host/fs-service
  */
 
-import { open, readdir, readFile, realpath, rename as renameFile, stat, writeFile, rm, mkdir } from 'node:fs/promises'
+import { open, readdir, readFile, realpath, rename as renameFile, stat, writeFile, rm, mkdir, cp } from 'node:fs/promises'
 import { watch as watchPath, type Dirent, type FSWatcher } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { DirListing, FileRead, FsEntry, PanelError, SearchHit, SearchView } from '../core/types.ts'
@@ -404,6 +404,62 @@ export class FsService {
       return { ok: true }
     } catch {
       return { code: 'write-failed', message: `cannot create file ${rel}` }
+    }
+  }
+
+  /** Copy a path (file or directory tree) to a target relative path. */
+  async copy(root: string, sourceRel: string, targetRel: string): Promise<{ ok: true } | PanelError> {
+    const gated = await this.gate(root)
+    if (!gated.ok) return gated.error
+    if (sourceRel === '' || targetRel === '') {
+      return { code: 'path-outside-root', message: 'refusing to copy the root' }
+    }
+    if (isGitPath(sourceRel) || isGitPath(targetRel)) {
+      return { code: 'path-outside-root', message: 'refusing to touch .git' }
+    }
+    const source = await resolveInsideRoot(gated.canonical, sourceRel)
+    if (!source.ok) return source.error
+    const target = await resolveInsideRoot(gated.canonical, targetRel)
+    if (!target.ok) return target.error
+    if (sourceRel === targetRel) {
+      return { code: 'write-failed', message: 'source and target are the same path' }
+    }
+    try {
+      await cp(source.abs, target.abs, { recursive: true, errorOnExist: false, force: true })
+      return { ok: true }
+    } catch {
+      return { code: 'write-failed', message: `cannot copy ${sourceRel} to ${targetRel}` }
+    }
+  }
+
+  /** Move (cut + paste) a path to a target relative path. */
+  async move(root: string, sourceRel: string, targetRel: string): Promise<{ ok: true } | PanelError> {
+    const gated = await this.gate(root)
+    if (!gated.ok) return gated.error
+    if (sourceRel === '' || targetRel === '') {
+      return { code: 'path-outside-root', message: 'refusing to move the root' }
+    }
+    if (isGitPath(sourceRel) || isGitPath(targetRel)) {
+      return { code: 'path-outside-root', message: 'refusing to touch .git' }
+    }
+    const source = await resolveInsideRoot(gated.canonical, sourceRel)
+    if (!source.ok) return source.error
+    const target = await resolveInsideRoot(gated.canonical, targetRel)
+    if (!target.ok) return target.error
+    if (sourceRel === targetRel) {
+      return { code: 'write-failed', message: 'source and target are the same path' }
+    }
+    try {
+      await renameFile(source.abs, target.abs)
+      return { ok: true }
+    } catch {
+      try {
+        await cp(source.abs, target.abs, { recursive: true, errorOnExist: false, force: true })
+        await rm(source.abs, { recursive: true, force: true })
+        return { ok: true }
+      } catch {
+        return { code: 'write-failed', message: `cannot move ${sourceRel} to ${targetRel}` }
+      }
     }
   }
 

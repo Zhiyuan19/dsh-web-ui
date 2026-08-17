@@ -92,6 +92,16 @@ export class PanelApi {
     return post('/aionui-panel/new-file', { root, path })
   }
 
+  /** Copy a path (file/directory) to a target relative path. */
+  copy(root: string, source: string, target: string): Promise<PanelEnvelope<{ ok: true }>> {
+    return post('/aionui-panel/copy', { root, source, target })
+  }
+
+  /** Move a path (file/directory) to a target relative path. */
+  move(root: string, source: string, target: string): Promise<PanelEnvelope<{ ok: true }>> {
+    return post('/aionui-panel/move', { root, source, target })
+  }
+
   /** The repo status view; null when the root is not a repository. */
   gitStatus(root: string): Promise<PanelEnvelope<GitStatusView | null>> {
     return post('/aionui-panel/git-status', { root })

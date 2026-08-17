@@ -93,6 +93,28 @@ export function ExplorerPanel({
       },
       { key: 'sep-1', label: '---' },
       {
+        key: 'copy',
+        label: t('explorer.menu.copy'),
+        onSelect: () => explorerStore.copyPaths([entry.path]),
+      },
+      {
+        key: 'cut',
+        label: t('explorer.menu.cut'),
+        onSelect: () => explorerStore.cutPaths([entry.path]),
+      },
+      {
+        key: 'paste',
+        label: t('explorer.menu.paste'),
+        disabled: (explorerStore.getSnapshot().clipboard?.paths.length ?? 0) === 0,
+        onSelect: () => {
+          const targetRel = entry.isDir ? entry.path : parent
+          void explorerStore.pasteInto(targetRel).then((ok) => {
+            if (!ok) toast(t('explorer.opFailed'))
+          })
+        },
+      },
+      { key: 'sep-2', label: '---' },
+      {
         key: 'reveal',
         label: t('explorer.menu.reveal'),
         onSelect: () => {
