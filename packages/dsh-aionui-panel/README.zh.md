@@ -27,7 +27,9 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-aionui-panel
 项目会话（当前会话有工作目录）打开后，聊天区右侧出现两块面板：
 
 - **Explorer（最右栏，默认 260px，范围 220~500px）**：`文件 / 变更` 双 tab；文件树整行点击展开/收起文件夹，点击文件在预览面板打开，顶部按文件名搜索（150ms 防抖，点击结果 = 定位到树中，不打断思路）；`变更` tab 读取真实 git 状态，支持 stage / unstage / discard（untracked 走删除，tracked 走 restore，批量放弃有确认）。
-- **文件树右键菜单**：右键文件/文件夹弹出菜单——复制路径、复制名称、在文件管理器中显示、用默认应用打开（仅文件）、重命名、新建文件、新建文件夹、删除（二次确认）；全部走工作区门禁（loopback 围栏 + 拒绝 .git 路径），「在文件管理器中显示」Windows 用 `explorer /select`、macOS 用 `open -R`、Linux 桌面回退打开父目录。
+- **文件树右键菜单**：右键文件/文件夹弹出菜单——复制路径、复制名称、**复制 / 剪切 / 粘贴**（面板内剪贴板，经后端 `/aionui-panel/copy` 和 `/aionui-panel/move` 路由）、在文件管理器中显示、用默认应用打开（仅文件）、**选择打开方式…**（Windows 系统「打开方式」对话框，`rundll32 OpenAs_RunDLL`）、重命名、新建文件、新建文件夹、删除（二次确认）；全部走工作区门禁（loopback 围栏 + 拒绝 .git 路径）。
+- **单击外部打开**：单击 Word/Excel/PPT/PDF/图片文件（无可用内部预览的类型）直接弹出 Windows 系统「打开方式」对话框，不再展示"不支持预览"面板。路径**含空格**时自动回退到 PowerShell `Start-Process`（用默认程序打开），因为 `OpenAs_RunDLL` 对带空格路径会静默失败——这是 Windows shell 的长期限制。
+- **启动失败检测**：后端通过 600ms 观察窗口验证 Windows 程序是否真正启动。WSL interop 被禁用（binfmt_misc 条目丢失）时进程会提前退出，UI 会 toast 提示"无法打开外部程序，请检查 WSL/Windows 互通是否正常"，而不是静默无响应。
 - **拖拽文件到输入框**：文件树中的文件行可拖拽（目录行除外），拖到聊天输入框区域松手即把相对路径（如 `deploy/base/deployment.yaml`）插入当前会话草稿的光标处，agent 收到消息后会自行读取该文件，无需手动输入路径；拖拽过程中输入框上方显示高亮提示条。
 - **Preview（右二栏，默认 480px，范围 340~1200px）**：多 tab 预览，支持 markdown / html / code / diff / csv / pdf / word / excel / ppt / 图片 / 文本 / url（code 预览经由官方 shiki core 语法高亮）；源码/预览切换、分屏编辑（比例持久化）、保存（mtime 冲突检测）、下载、刷新（4 态：不渲染死按钮）、dirty 点、中键关闭、右键菜单批量关闭（dirty 确认）、tab 溢出渐变指示器。
 - **Mermaid 图表**：markdown 预览中的 ```mermaid 代码块会渲染成图表。mermaid 运行时打包在包内，经 `/aionui-panel/vendor/mermaid.js` 同源提供（不走 CDN、离线可用、loopback 围栏）；图表跟随 shell 明暗主题并在切换时重渲染；图源语法错误时回退为原代码块。
