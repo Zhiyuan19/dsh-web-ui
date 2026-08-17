@@ -89,8 +89,13 @@ function spawnOsCommand(ctx: Context, argv: string[]): PanelError | null {
  * script that then exits non-zero within milliseconds. A process that is still
  * alive after the window — or exits 0 — is treated as launched; an early
  * non-zero exit is reported as a failure.
+ *
+ * With `requireAlive` (used for rundll32's OpenAs_RunDLL) any exit inside the
+ * grace window is a failure — that dialog exits 0 even when it silently fails
+ * on paths containing spaces; the only reliable success signal is that the
+ * process stays alive (the dialog is open) past the window.
  */
-async function spawnOsCommandWithGrace(ctx: Context, argv: string[]): Promise<PanelError | null> {
+async function spawnOsCommandWithGrace(ctx: Context, argv: string[], requireAlive = false): Promise<PanelError | null> {
   const spec: SubprocessSpawnSpec = {
     argv,
     cwd: dirname(argv[argv.length - 1] ?? process.cwd()),
@@ -109,7 +114,13 @@ async function spawnOsCommandWithGrace(ctx: Context, argv: string[]): Promise<Pa
         setTimeout(() => resolve({ kind: 'timeout' }), 600)
       }),
     ])
-    if (outcome.kind === 'done' && outcome.exitCode !== 0 && outcome.exitCode !== null) {
+    if (outcome.kind === 'timeout') return null
+    if (requireAlive) {
+      // Any early exit (including 0) means the Open As dialog did not open.
+      ctx.logger.warn(`dsh-aionui-panel: OpenAs exited early ([${argv.join(', ')}]): ${String(outcome.exitCode)}`)
+      return { code: 'internal', message: 'cannot run OS command' }
+    }
+    if (outcome.exitCode !== 0 && outcome.exitCode !== null) {
       ctx.logger.warn(`dsh-aionui-panel: OS command exited early ([${argv.join(', ')}]): ${String(outcome.exitCode)}`)
       return { code: 'internal', message: 'cannot run OS command' }
     }
@@ -637,8 +648,21 @@ export function registerPanelRoutes(ctx: Context, fs: FsService, git: GitService
         // Under WSL the Windows GUI launcher must receive the UNC/drive form;
         // anywhere else the plain host path is already what the OS expects.
         const target = (await wslWindowsPath(ctx, resolved.abs)) ?? resolved.abs
-        const error = await spawnOsCommandWithGrace(ctx, openWithArgv(process.platform, target))
-        json(res, error === null ? OK({ ok: true as const }) : FAIL(error))
+        // OpenAs_RunDLL fails silently on paths containing spaces; fall back
+        // to PowerShell Start-Process so the file still opens with its
+        // default app instead of a dead click.
+        const openWithError = await spawnOsCommandWithGrace(ctx, openWithArgv(process.platform, target), true)
+        if (openWithError === null) {
+          json(res, OK({ ok: true as const }))
+          return
+        }
+        const fallbackError = await spawnOsCommandWithGrace(ctx, [
+          'powershell.exe',
+          '-NoProfile',
+          '-Command',
+          `Start-Process -FilePath '${target}'`,
+        ])
+        json(res, fallbackError === null ? OK({ ok: true as const }) : FAIL(fallbackError))
         return
       }
       case '/aionui-panel/rename': {
