@@ -83,6 +83,44 @@ function spawnOsCommand(ctx: Context, argv: string[]): PanelError | null {
 }
 
 /**
+ * Spawn one OS GUI command and wait a short grace window before deciding it
+ * succeeded. A bare `spawn` event is not proof the binary really launched:
+ * with WSL interop disabled the kernel may still "spawn" a PE file as a shell
+ * script that then exits non-zero within milliseconds. A process that is still
+ * alive after the window — or exits 0 — is treated as launched; an early
+ * non-zero exit is reported as a failure.
+ */
+async function spawnOsCommandWithGrace(ctx: Context, argv: string[]): Promise<PanelError | null> {
+  const spec: SubprocessSpawnSpec = {
+    argv,
+    cwd: dirname(argv[argv.length - 1] ?? process.cwd()),
+    stdio: {
+      stdin: 'ignore',
+      stdout: { maxBytes: 1 << 16 },
+      stderr: { maxBytes: 1 << 16 },
+    },
+    graceMs: 5_000,
+  }
+  try {
+    const handle = ctx.subprocess.spawn(spec)
+    const outcome = await Promise.race([
+      handle.done.then((result) => ({ kind: 'done' as const, exitCode: result.exitCode })),
+      new Promise<{ kind: 'timeout' as const }>((resolve) => {
+        setTimeout(() => resolve({ kind: 'timeout' }), 600)
+      }),
+    ])
+    if (outcome.kind === 'done' && outcome.exitCode !== 0 && outcome.exitCode !== null) {
+      ctx.logger.warn(`dsh-aionui-panel: OS command exited early ([${argv.join(', ')}]): ${String(outcome.exitCode)}`)
+      return { code: 'internal', message: 'cannot run OS command' }
+    }
+    return null
+  } catch (error) {
+    ctx.logger.warn(`dsh-aionui-panel: OS command failed ([${argv.join(', ')}]): ${String(error)}`)
+    return { code: 'internal', message: 'cannot run OS command' }
+  }
+}
+
+/**
  * Translate a host path into the Windows form Windows GUI programs need
  * when the harness runs under WSL (interop). `wslpath -w` yields either a
  * UNC path (`\\wsl.localhost\...`) or a drive path (`C:\...`); the raw
@@ -599,7 +637,7 @@ export function registerPanelRoutes(ctx: Context, fs: FsService, git: GitService
         // Under WSL the Windows GUI launcher must receive the UNC/drive form;
         // anywhere else the plain host path is already what the OS expects.
         const target = (await wslWindowsPath(ctx, resolved.abs)) ?? resolved.abs
-        const error = spawnOsCommand(ctx, openWithArgv(process.platform, target))
+        const error = await spawnOsCommandWithGrace(ctx, openWithArgv(process.platform, target))
         json(res, error === null ? OK({ ok: true as const }) : FAIL(error))
         return
       }
